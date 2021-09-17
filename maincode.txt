@@ -1,0 +1,161 @@
+from tkinter import *
+import tkinter
+from PIL import Image
+from PIL import ImageTk
+from tkinter import filedialog
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import pickle
+import re
+
+# For classification of given subject
+from arnoldClf import classf
+
+import sys
+
+loaded_image = [0]
+
+# Here, we are creating our class, Window, and inheriting from the Frame
+# class. Frame is a class from the tkinter module. (see Lib/tkinter/__init__)
+class Window(Frame):
+    # Define settings upon initialization. Here you can specify
+    def __init__(self, master=None):
+        # parameters that you want to send through the Frame class.
+        Frame.__init__(self, master)   
+
+        #reference to the master widget, which is the tk window                 
+        self.master = master
+
+        #with that, we want to then run init_window, which doesn't yet exist
+        self.init_window()
+
+        self.w = 500
+        self.h = 300
+
+        self.load = Image.open("dummy.jpg")
+        self.load = self.load.resize((self.w, self.h), Image.ANTIALIAS)
+        render = ImageTk.PhotoImage(self.load)
+        
+        # labels can be text or images
+        self.img = Label(root, image=render)
+        self.img.place(x=0, y=0)
+
+        self.text2 = Text(root, height=20, width=50)
+        self.scroll = Scrollbar(root, command=self.text2.yview)
+
+    #Creation of init_window
+    def init_window(self):
+
+        # changing the title of our master widget      
+        self.master.title("GUI")
+
+        # allowing the widget to take the full space of the root window
+        self.pack(fill=BOTH, expand=1)
+
+        # creating a menu instance
+        menu = Menu(self.master)
+        self.master.config(menu=menu)
+
+        # create the file object)
+        file = Menu(menu)
+
+        # adds a command to the menu option, calling it exit, and the
+        # command it runs on event is client_exit
+
+        file.add_command(label="Load Test Image",command=self.showRealTimeImage)
+        file.add_command(label="Arnold Transform",command=self.showArnoldTransf)
+        file.add_command(label="Show Results", command=self.showRes)
+        file.add_command(label="Exit", command=self.client_exit)
+       
+        #added "file" to our menu
+        menu.add_cascade(label="File", menu=file)
+
+    def showRealTimeImage(self):
+
+        self.text2.pack_forget()
+
+        filename1 = filedialog.askopenfilename()
+        loaded_image[0] = filename1
+
+        load = Image.open(filename1)
+        resized_load = load.resize((self.w, self.h), Image.ANTIALIAS)
+        render = ImageTk.PhotoImage(resized_load)
+
+        # labels can be text or images
+        self.img.configure(image=render)
+        self.img.image = render
+        self.img.place(x=0, y=0)
+
+    def arnoldTransform(self, imageFileName):
+        # Read an input image
+        im = np.array(Image.open(imageFileName))
+
+        # Read the number of rows of image
+        N = im.shape[0]
+
+        # Create a NxN meshgrid
+        x,y = np.meshgrid(range(N),range(N))
+
+        # Generate maps
+        xmap = (2*x+y) % N
+        ymap = (x+y) % N
+
+        # 5 itarations to generate feature representations
+        for i in range(1,10):
+            scr_img = Image.fromarray(im)
+            im = im[xmap,ymap]
+        scr_img.save("arnold.bmp")
+
+    def showArnoldTransf(self):
+
+        self.arnoldTransform(loaded_image[0])		
+
+        load = Image.open("arnold.bmp")
+        load = load.resize((self.w, self.h), Image.ANTIALIAS)
+        self.render = ImageTk.PhotoImage(load)
+
+        # labels can be text or images
+        self.img.configure(image=self.render)
+        self.img.image = self.render
+        self.img.place(x=0, y=0)
+
+
+    def showRes(self):
+
+        pred, confid = classf(loaded_image[0])
+        
+        load = Image.open(loaded_image[0])
+        resized_load = load.resize((self.w//2, self.h), Image.ANTIALIAS)
+        render = ImageTk.PhotoImage(resized_load)
+
+        # labels can be text or images
+        self.img.configure(image=render)
+        self.img.image = render
+        self.img.pack(side=LEFT)
+
+        self.text2.delete(1.0,END)
+        self.text2.configure(yscrollcommand=self.scroll.set)
+        self.text2.tag_configure('bold_italics', font=('Arial', 12, 'bold', 'italic'))
+        self.text2.tag_configure('big', font=('Verdana', 20, 'bold'))
+        self.text2.tag_configure('color', foreground='#476042',
+                                font=('Tempus Sans ITC', 12, 'bold'))
+        self.text2.insert(END,'\n'+ str(pred) +'\n\n', 'big')
+        quote = "The subject was identified to be "+ str(pred) + " with confidence: " + str(round(confid, 2))
+        self.text2.insert(END, quote, 'color')
+        self.text2.pack(side=LEFT)
+        self.scroll.pack(side=RIGHT, fill=Y)
+
+    def client_exit(self):
+        sys.exit(0)
+
+# root window created. Here, that would be the only window, but
+root = Tk()  # A root window for displaying objects
+root.geometry("500x300")
+
+#creation of an instance
+app = Window(master=root)
+
+app.mainloop() 
+root.destroy()
+sys.exit(0)

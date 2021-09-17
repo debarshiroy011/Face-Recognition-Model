@@ -1,0 +1,100 @@
+from PIL import Image
+from numpy import *
+import glob
+import re
+import pickle
+import io
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn.decomposition import PCA
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+
+#--------- Read images and generate Arnold transforms -----------#
+
+feats = []
+labs = []
+
+if not os.path.exists("feats_scr_face.pkl"):
+
+    for fname in glob.glob("yalefaces/subject*"):
+
+        print("Reading file:", fname)
+        
+        # Read an input image
+        im = array(Image.open(fname))
+
+        # Read the number of rows of image
+        N = im.shape[0]
+
+        # Create a NxN meshgrid
+        x,y = meshgrid(range(N),range(N))
+
+        # Generate maps
+        xmap = (2*x+y) % N
+        ymap = (x+y) % N
+
+        # 5 itarations to generate feature representations
+        for i in range(1,6):
+            scr_img = Image.fromarray(im)
+            im = im[xmap,ymap]
+
+        flat_feat = np.array(scr_img).flatten()
+        feats.append(flat_feat)
+
+        # Label extraction
+        lab = re.search("(subject)(\d+)", fname).groups()[1]
+        labs.append(int(lab))
+
+    with io.open("feats_scr_face.pkl", "wb") as fp:
+        pickle.dump(feats, fp)
+
+    with io.open("labs_scr_face.pkl", "wb") as fp:
+        pickle.dump(labs, fp)
+
+with io.open("feats_scr_face.pkl", "rb") as fp:
+    data = pickle.load(fp)
+
+with io.open("labs_scr_face.pkl", "rb") as fp:
+    labs = pickle.load(fp)
+
+# Split the training and testing data
+Xtrain, Xtest, ytrain, ytest = train_test_split(data, labs, test_size=0.1, shuffle=True, stratify=labs, random_state=10)
+
+# PCA model generation and transformation
+n_comp = 100 
+_pca = PCA(n_components = n_comp, whiten=True, random_state=10)
+_pca.fit(Xtrain)
+# print("Variance retained:", sum(_pca.explained_variance_ratio_))
+
+Xtrain_trans = _pca.transform(Xtrain)
+Xtest_trans = _pca.transform(Xtest)
+
+# Model generation and classification of the data
+clf = RandomForestClassifier(max_depth=30, n_estimators=50, min_samples_leaf=3, random_state=10)
+clf.fit(Xtrain_trans, ytrain)
+
+print( "Training accuracy: %0.4f" % (clf.score(Xtrain_trans, ytrain)) )
+print( "Testing accuracy: %0.4f" % (clf.score(Xtest_trans, ytest)) )
+
+from sklearn.tree import export_graphviz
+import pydotplus
+import matplotlib.pyplot as plt
+from IPython.display import Image
+
+sub_tree_n = clf.estimators_[3]
+
+dot_data = export_graphviz(
+    sub_tree_n,
+    out_file=None, filled=True,
+    rounded=True,  
+    special_characters=True,
+    proportion=True,
+)
+graph = pydotplus.graph_from_dot_data(dot_data)  
+plt.rcParams["figure.figsize"] = (50,100)
+#img = Image(graph.create_png()) 
+graph.write_jpg("tree.jpg") 
+
